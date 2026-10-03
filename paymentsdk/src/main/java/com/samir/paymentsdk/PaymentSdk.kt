@@ -1,82 +1,139 @@
 package com.samir.paymentsdk
 
 import android.content.Context
-import com.samir.paymentsdk.DefaultPaymentGateway
+import com.samir.paymentsdk.core.model.PaymentFailure
+import com.samir.paymentsdk.core.model.PaymentRequest
+import com.samir.paymentsdk.core.model.PaymentSession
+import com.samir.paymentsdk.core.payment.PaymentStatus
+import com.samir.paymentsdk.core.provider.PaymentProvider
+import com.samir.paymentsdk.internal.PaymentProviderRegistryFactory
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
-/**
- * Main public entry point.
- *
- * Usage:
- * PaymentSdk.initialize(context, config)
- * PaymentSdk.instance.startPayment(request) { result -> ... }
- */
-class PaymentSdk private constructor(
+class PaymentSdk internal constructor(
     private val applicationContext: Context,
     private val config: PaymentSdkConfig,
-    private val gateway: PaymentGateway
+    private val provider: PaymentProvider
 ) {
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    private val scope =
+        CoroutineScope(
+            SupervisorJob() + Dispatchers.IO
+        )
 
     fun startPayment(
         request: PaymentRequest,
         callback: (PaymentResult) -> Unit
     ) {
+
         validate(request)
 
         scope.launch {
-            val result = runCatching {
-                gateway.createPayment(request)
-            }.getOrElse { throwable ->
-                PaymentResult.Failed(
-                    code = "SDK_ERROR",
-                    message = throwable.message ?: "Payment failed.",
-                    retryable = true
-                )
-            }
 
-            callback(result)
+            val result = runCatching {
+                provider.createPayment(request)
+            }.fold(
+                onSuccess = { session ->
+                    session.toPaymentResult()
+                },
+                onFailure = { error ->
+                    PaymentResult.Failed(
+                        PaymentSession(
+                            paymentId = "",
+                            orderId = request.orderId,
+                            status = PaymentStatus.FAILED,
+                            amountMinor = request.amountMinor,
+                            currency = request.currency,
+                            failure = PaymentFailure(
+                                code = "SDK_ERROR",
+                                message = error.message
+                                    ?: "Payment failed",
+                                retryable = true
+                            )
+                        )
+                    )
+                }
+            )
+
+            withContext(Dispatchers.Main.immediate) {
+                callback(result)
+            }
         }
     }
 
-    private fun validate(request: PaymentRequest) {
-        require(request.amountMinor > 0) {
-            "amountMinor must be greater than zero."
+    private fun validate(
+        request: PaymentRequest
+    ) {
+
+        require(request.amountMinor > 0L) {
+            "amountMinor must be greater than zero"
         }
+
         require(request.currency.length == 3) {
-            "currency must be a 3-letter ISO-4217 code."
+            "currency must be a 3-letter ISO-4217 code"
         }
+
         require(request.orderId.isNotBlank()) {
-            "orderId must not be blank."
-        }
-        require(config.publishableKey.isNotBlank()) {
-            "publishableKey must not be blank."
+            "orderId must not be blank"
         }
     }
 
     companion object {
+
         @Volatile
         private var INSTANCE: PaymentSdk? = null
 
         fun initialize(
             context: Context,
-            config: PaymentSdkConfig,
-            gateway: PaymentGateway = DefaultPaymentGateway(config)
+            config: PaymentSdkConfig
         ): PaymentSdk {
+
             return INSTANCE ?: synchronized(this) {
-                INSTANCE ?: PaymentSdk(
-                    context.applicationContext,
-                    config,
-                    gateway
-                ).also { INSTANCE = it }
+
+                INSTANCE ?: run {
+
+                    val registry = PaymentProviderRegistryFactory.create()
+                    PaymentSdk(
+                        applicationContext = context.applicationContext,
+                        config = config,
+                        provider = registry.createProvider(config.provider)
+                    ).also {
+                        INSTANCE = it
+                    }
+                }
             }
         }
 
         val instance: PaymentSdk
             get() = INSTANCE
-                ?: error("PaymentSdk.initialize(...) must be called first.")
+                ?: error(
+                    "PaymentSdk.initialize() must be called first"
+                )
+    }
+}
+
+private fun PaymentSession.toPaymentResult(): PaymentResult {
+    return when (status) {
+
+        PaymentStatus.SUCCEEDED ->
+            PaymentResult.Success(this)
+
+        PaymentStatus.REQUIRES_ACTION ->
+            PaymentResult.RequiresAction(this)
+
+        PaymentStatus.PROCESSING ->
+            PaymentResult.Processing(this)
+
+        PaymentStatus.FAILED ->
+            PaymentResult.Failed(this)
+
+        PaymentStatus.CANCELLED ->
+            PaymentResult.Cancelled(this)
+
+        PaymentStatus.CREATED ->
+            PaymentResult.Processing(this)
     }
 }

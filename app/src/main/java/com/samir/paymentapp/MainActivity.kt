@@ -12,6 +12,7 @@ import com.samir.paymentapp.screens.PaymentMainScreen
 import com.samir.paymentapp.ui.theme.PaymentSdkTheme
 import com.samir.paymentsdk.PaymentSdk
 import com.samir.paymentsdk.PaymentSdkConfig
+import com.samir.paymentsdk.core.provider.PaymentProviderId
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -32,14 +33,17 @@ class MainActivity : ComponentActivity() {
     }
 
     fun initializePayment() {
+        val config = PaymentSdkConfig(
+            environment = PaymentSdkConfig.Environment.SANDBOX,
+            publishableKey = "demo_key",
+            apiBaseUrl = "https://example.com",
+            merchantName = "Demo Merchant",
+            provider = PaymentProviderId("demo")
+        )
+
         PaymentSdk.initialize(
-            applicationContext,
-            PaymentSdkConfig(
-                environment = PaymentSdkConfig.Environment.SANDBOX,
-                publishableKey = "pk_test_demo",
-                apiBaseUrl = "https://api.example.com/",
-                merchantName = "Demo Merchant"
-            )
+            context = applicationContext,
+            config = config
         )
     }
 }

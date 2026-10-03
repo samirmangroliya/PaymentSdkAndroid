@@ -1,10 +1,9 @@
 plugins {
     alias(libs.plugins.android.library)
-    alias(libs.plugins.kotlin.parcelize)
 }
 
 android {
-    namespace = "com.samir.paymentsdk"
+    namespace = "com.samir.payment_provider_demo"
     compileSdk {
         version = release(37)
     }
@@ -30,5 +29,4 @@ dependencies {
     androidTestImplementation(libs.androidx.junit)
 
     implementation(project(":payment-sdk-core"))
-    implementation(project(":payment-provider-demo"))
 }

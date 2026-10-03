@@ -25,3 +25,5 @@ dependencyResolutionManagement {
 rootProject.name = "PaymentSdk"
 include(":app")
 include(":paymentsdk")
+include(":payment-provider-demo")
+include(":payment-sdk-core")
